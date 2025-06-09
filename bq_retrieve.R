@@ -2,6 +2,7 @@ library(tidyverse)
 library(bigrquery)
 library(dotenv)
 
+rm(list = ls())
 #### ---- Data import ----
 # Use environment variables to mask private data.
 load_dot_env()
@@ -29,7 +30,7 @@ if (inherits(df, "try-error")) {
 
 glimpse(df)
 
-# Any NA rows?
+# Any NA rows for primary key 'acc'?
 is.na(df$acc) %>% table() # None
 
 # Check file sizes
@@ -42,10 +43,11 @@ df %>%
   filter(mbytes == 0) %>% 
   group_by(bioproject) %>% 
   count()
-# Three bioprojects, remove from list.
+# One bioproject, remove from list.
 df <-
   df %>% 
   filter(mbytes != 0)
+
 
 #### ---- Data analysis ----
 # Factors affecting SRA run processing order:
@@ -56,7 +58,16 @@ df <-
 #   Abdomen only samples
 #   Brief summary of above 4 categories before dividing further.
 
-# First expand the 'jattr' nested table and add to the df
+# First, looks like the 'attributes' and 'jattr' are nested as JSON objects.
+# These each contain the same sample info, e.g. 'tissue_sam_ss_dpl145': 'thoracic muscle'.
+# Expand 'jattr' and add it to the df. Drop 'jattr' and 'attributes' nested columns.
+
+glimpse(df)
+
+df %>% 
+  select(jattr) %>% 
+  head
+
 library(jsonlite)
 parsed_jattr <- lapply(df$jattr, fromJSON)
 jattr_tibble <- 
@@ -73,12 +84,56 @@ jattr_tibble <-
 
 jattr_df <- as_tibble(cbind(df[, !names(df) %in% c("attributes", "jattr")], jattr_tibble), .name_repair = "unique")
 
-# Find instances of 'female' across expanded df.
+# Table occurrences of keywords by column.
+
+# Get only the character columns
+y <-
+  jattr_df %>% 
+  select(where(is.character))
+
+# Define keywords.
+keywords <- c("female", "male", "drone", "queen", "worker", "nurse", "whole body", "head", "thorax", "abdomen")
+keyword_list <- list()
+# Get the columns the keywords appear in.
+
+for (keyword in keywords) {
+  keyword_list[keyword] <- 
+      as_tibble(sapply(y, function(x) { grep(keyword, x, ignore.case = T)}) %>%
+        lapply(., length) %>%
+        unlist)
+  
+}
+x <- as.data.frame(do.call(rbind, keyword_list))
+names(x) <- names(y)
+x<- x[ , colSums(x) != 0]
+x
+
+# intersections
+# whole body and female
+y %>% 
+  filter(if_any(everything(), ~ grepl('female', .)) & if_any(everything(), ~ grepl('female', .))) %>% 
+  count
+
+# matrix of keywords
+x <- c(1, 2, 3, 4)
+k <- 2
+combinations <- combn(keywords, k)
+mf <- data.frame()
+colnames(mf) <- keywords
+row.names(mf) <- 
+# The number of columns of the matrix is the number of elements in each combination (k).
+num_cols <- length(x)
+# The number of rows of the matrix is the total number of possible combinations.
+num_rows <- nrow(combinations)
+# For simplicity, reshape the matrix to have one column per combination.
+resulting_matrix <- matrix(combinations, nrow = num_rows, ncol = num_cols)
+
+
 
 y <-
   jattr_df %>%
   mutate(found_in = pmap_chr(across(everything()), ~ {
-    cols_with_string <- names(.)[sapply(list(...), function(x) grepl(".*female.*", x))]
+    cols_with_string <- names(.)[sapply(list(...), function(x) grepl("female", x))]
     if (length(cols_with_string) > 0) {
       paste(cols_with_string, collapse = ", ")
     } else {
@@ -87,9 +142,7 @@ y <-
   }))
 
 
-y <-
-  jattr_df %>% 
-  select(where(is.character))
+
 %>% 
   filter(row_number() %in% unlist(sapply(., function(x) { grep("female", x)}))) %>% 
   
@@ -100,7 +153,7 @@ y <-
 
 
 
-z <- y[unlist(sapply(y, function(x) { grep("female", x)})), ]
+
 
 jattr_df %>%
   group_by(acc) %>% 
