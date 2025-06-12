@@ -1,0 +1,111 @@
+---
+title: "Find bee SRA runs from metadata"
+author: "Blake Paget"
+date: '2025'
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Background
+RNA-Seq data will be analysed to determine the expression pattern of an uncharacterised protein.
+The Sequence Read Archive (SRA) maintained by NCBI will be used. The metadata will be searched for appropriate runs. In a separate publication selected runs will be downloaded and analysed.<br>
+
+"SRA has deposited its metadata into BigQuery to provide the bioinformatics community with programmatic access to this data.
+You can now search across the entire SRA by sequencing methodologies and sample attributes."<br>
+
+A simple SQL query will be used to retrieve a table for further analysis in R. The sample attributes are an inconsistent mess and rather than trying to sort that with complex SQL queries, I'll just use R.
+
+## Script
+#### Load libraries
+```{r libraries, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(bigrquery)
+library(dotenv)
+```
+<br>
+
+#### Import csv from BigQuery
+```{r bq}
+# Use environment variables to mask private data.
+load_dot_env()
+
+# Read the csv bq table if available, otherwise redo the SQL query.
+df <- try(read.csv("bquxjob_722b10fc_1971e82ea0f.csv"))
+if (inherits(df, "try-error")) {
+  # BigQeury SQL query
+  query <-
+    "
+    SELECT *
+    FROM `nih-sra-datastore.sra.metadata`
+    WHERE
+      organism = 'Apis mellifera' AND
+      consent = 'public' AND
+      assay_type = 'RNA-Seq'
+    "
+  tb <- bq_project_query(Sys.getenv("BIGQUERY_PROJECT"), query)
+  df <- bq_table_download(tb)
+}
+```
+<br>
+
+#### Data cleaning
+```{r cleaning1}
+glimpse(df)
+
+# Any NA rows for primary key 'acc'?
+is.na(df$acc) %>% table()
+
+# Check file sizes
+is.na(df$mbytes) %>% table()
+max(df$mbytes)
+min(df$mbytes)
+
+# What entries have 0 Mb?
+df %>%
+  filter(mbytes == 0) %>% 
+  group_by(bioproject) %>% 
+  count()
+
+# One bioproject, remove from list.
+df <-
+  df %>% 
+  filter(mbytes != 0)
+
+# Looks like the 'attributes' and 'jattr' are nested as JSON objects. 
+# Not shown here, I have extracted these and compared them.
+# These each contain the same sample info, e.g. 'tissue_sam_ss_dpl145': 'thoracic muscle'.
+# Expand 'jattr' and add it to the df. Drop 'jattr' and 'attributes' nested columns.
+```
+```{r cleaning2, warning=FALSE, message=FALSE}
+library(jsonlite)
+```
+```{r cleaning3}
+parsed_jattr <- lapply(df$jattr, fromJSON)
+jattr_tibble <- 
+  lapply(parsed_jattr, function(x) { 
+    t(cbind(names(x), as.character(unname(x))))
+  }) %>% 
+  lapply(function(x) {
+    z <- as.data.frame(x[-1, ])
+    row.names(z) <- x[1, ]
+    as.data.frame(t(z))
+  }) %>% 
+  do.call(plyr::rbind.fill, .) %>% 
+  as_tibble
+
+jattr_df <- as_tibble(cbind(df[, !names(df) %in% c("attributes", "jattr")], jattr_tibble), .name_repair = "unique")
+nrow(jattr_df)
+```
+<br>
+
+#### Data analysis
+
+```{r analysis1}
+# Get only the character columns
+df_chr <-
+  jattr_df %>% 
+  select(where(is.character))
+```

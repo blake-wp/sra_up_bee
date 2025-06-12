@@ -48,26 +48,9 @@ df <-
   df %>% 
   filter(mbytes != 0)
 
-
-#### ---- Data analysis ----
-# Factors affecting SRA run processing order:
-#   Foraging bees = female, worker caste
-#   Whole body samples
-#   Head only samples
-#   Thorax only samples
-#   Abdomen only samples
-#   Brief summary of above 4 categories before dividing further.
-
 # First, looks like the 'attributes' and 'jattr' are nested as JSON objects.
 # These each contain the same sample info, e.g. 'tissue_sam_ss_dpl145': 'thoracic muscle'.
 # Expand 'jattr' and add it to the df. Drop 'jattr' and 'attributes' nested columns.
-
-glimpse(df)
-
-df %>% 
-  select(jattr) %>% 
-  head
-
 library(jsonlite)
 parsed_jattr <- lapply(df$jattr, fromJSON)
 jattr_tibble <- 
@@ -84,10 +67,24 @@ jattr_tibble <-
 
 jattr_df <- as_tibble(cbind(df[, !names(df) %in% c("attributes", "jattr")], jattr_tibble), .name_repair = "unique")
 
+
+#### ---- Data analysis ----
+# Factors affecting SRA run processing order:
+#   Foraging bees = female, worker caste
+#   Whole body samples
+#   Head only samples
+#   Thorax only samples
+#   Abdomen only samples
+#   Brief summary of above 4 categories before dividing further.
+
+
+glimpse(df)
+
+
 # Table occurrences of keywords by column.
 
 # Get only the character columns
-y <-
+df_chr <-
   jattr_df %>% 
   select(where(is.character))
 
@@ -96,6 +93,14 @@ keywords <- c("female", "male", "drone", "queen", "worker", "nurse", "whole body
 keyword_list <- list()
 # Get the columns the keywords appear in.
 
+
+
+
+
+
+
+
+#### ---- RUBBISH ----
 for (keyword in keywords) {
   keyword_list[keyword] <- 
       as_tibble(sapply(y, function(x) { grep(keyword, x, ignore.case = T)}) %>%
