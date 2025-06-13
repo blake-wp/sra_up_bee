@@ -1,6 +1,7 @@
 library(tidyverse)
 library(bigrquery)
 library(dotenv)
+library(ggplot2)
 
 rm(list = ls())
 #### ---- Data import ----
@@ -43,10 +44,17 @@ df %>%
   filter(mbytes == 0) %>% 
   group_by(bioproject) %>% 
   count()
-# One bioproject, remove from list.
+
+df %>% 
+  filter(bioproject == "PRJNA477521") %>% 
+  select(acc, mbases, mbytes, library_name)
+
+# One bioproject with samples with blank reads? Remove from list.
 df <-
   df %>% 
   filter(mbytes != 0)
+
+nrow(df)
 
 # First, looks like the 'attributes' and 'jattr' are nested as JSON objects.
 # These each contain the same sample info, e.g. 'tissue_sam_ss_dpl145': 'thoracic muscle'.
@@ -89,41 +97,156 @@ df_chr <-
   select(where(is.character))
 
 # Define keywords.
-keywords <- c("female", "male", "drone", "queen", "worker", "nurse", "whole body", "head", "thorax", "abdomen")
+keywords <- c("female", "male", "drone", "queen", "worker", "nurse", "forager", "whole.body", "head", "thorax", "abdomen")
+keywords <- sort(keywords)
+
+# Grep each row of the table for the keyword, producing a list of all columns
+# with the row number under the column the keyword appeared in.
+# Count the number of row indices for each column (length).
 keyword_list <- list()
-# Get the columns the keywords appear in.
+for (keyword in keywords) {
+  keyword_list[keyword] <- 
+    as_tibble(sapply(df_chr, function(x) { grep(keyword, x, ignore.case = T)}) %>%
+                lapply(., length) %>%
+                unlist)
+}
+
+# Tidy.
+keyword_find <- as.data.frame(do.call(rbind, keyword_list))
+names(keyword_find) <- names(df_chr)
+keyword_find <- keyword_find[ , colSums(keyword_find) != 0]
+ncol(keyword_find) # the keywords appear in 34 columns of the expanded metadata.
+
+# Summary of keyword spread.
+data.frame(freq = sort(colSums(keyword_find), decreasing = T)) # most frequent columns
+
+###
+
+# All combinations (x2) of keywords with replacement and distinct items.
+key_key <- arrangements::combinations(x = keywords, k = 2, replace = TRUE)
+
+# Add word boundaries for grep so that male is not pulled from female or other unforeseen cases.
+bounded_keys <- apply(t(key_key), 1, function(x) { paste0("\\b", x, "\\b") })
+
+# Filter for both keywords, ignore case.
+df_chr_searched <- apply(bounded_keys, 1, function(x) {
+  jattr_df %>% 
+    select(where(is.character)) %>% 
+    filter(if_any(everything(), ~ grepl(x[1], ., ignore.case = T)) & if_any(everything(), ~ grepl(x[2], ., ignore.case = T)))
+})
+df_searched_count <- lapply(df_chr_searched, count)
+
+# Combine keyword combinations and their counts.
+key_key_count <- as.data.frame(cbind(key_key, unlist(df_searched_count)))
+
+# Use df_chr_searched to get total size of all SRA runs for each combination.
+df_chr_searched
+acc <- lapply(df_chr_searched, select, acc)
+df_gb_searched <- lapply(acc, function(x) {
+  jattr_df %>% 
+    semi_join(x, by = "acc") %>% 
+    summarise(sum = sum(mbytes)) %>% 
+    pull(sum)
+})
+
+# Add gb info to key_key_count table. 
+key_key_count$gb <- round(unlist(df_gb_searched)/1000, digits = 0)
+
+# Duplicate the counts for the reciprocal combinations to make the plot more readable.
+recip_key_key_count <- cbind(V2 = key_key_count$V1, V1 = key_key_count$V2, V3 = key_key_count$V3, gb = key_key_count$gb)
+key_key_count <- rbind(key_key_count, recip_key_key_count)
+key_key_count <- key_key_count[!duplicated(key_key_count), ]
+key_key_count$V3 <- as.numeric(key_key_count$V3)
+key_key_count$gb <- as.numeric(key_key_count$gb)
+
+
+ggplot(key_key_count, aes(V1, V2)) +
+  geom_tile(aes(fill = V3)) +
+  geom_text(aes(label = V3)) +
+  scale_fill_gradient(low = "white",
+                      high = "orange",
+                      name = "SRA runs") +
+  labs(title = "Number of SRA runs given a combination of two keywords",
+       subtitle = "Diagonal represents a single keyword") +
+  theme(axis.title = element_blank(),
+        axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4, size = 12),
+        axis.text.y = element_text(size = 12),
+        axis.line.x = element_line(color = "black"),
+        axis.line.y = element_line(color = "black"),
+        panel.grid.major = element_blank(),
+        plot.caption.position = "plot",
+        plot.caption = element_text(hjust = 0),
+        plot.title.position = "plot",
+        panel.background = element_blank(),
+        panel.border = element_rect(color = "grey60", fill = NA),
+        legend.position = "right",
+        strip.background = element_rect(color = "grey60", fill = "white"))
+
+
+  
+ggplot(key_key_count, aes(V1, V2)) +
+  geom_tile(aes(fill = gb)) +
+  geom_text(aes(label = gb)) +
+  scale_fill_gradient(low = "white",
+                      high = "lightblue",
+                      name = "Size (Gb)") +
+  labs(title = "Total size of SRA runs given a combination of two keywords",
+       subtitle = "Diagonal represents a single keyword") +
+  theme(axis.title = element_blank(),
+        axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4, size = 12),
+        axis.text.y = element_text(size = 12),
+        axis.line.x = element_line(color = "black"),
+        axis.line.y = element_line(color = "black"),
+        panel.grid.major = element_blank(),
+        plot.caption.position = "plot",
+        plot.caption = element_text(hjust = 0),
+        plot.title.position = "plot",
+        panel.background = element_blank(),
+        panel.border = element_rect(color = "grey60", fill = NA),
+        legend.position = "right",
+        strip.background = element_rect(color = "grey60", fill = "white"))
 
 
 
 
+# consider
+# female: { queen, worker: { nurse, forager } }
+# male:   { drone }
+# tissue: { whole.body: { head, thorax, abdomen } }
 
+# First subset worker, whole.body. 
+# Seems to be a huge number where the caste is not defined: 721
+
+### Function to calculate total mbytes of a subset
+calc_mbytes <- function(dataframe, ...) {
+  keywords <- list(...)
+  keywords <- unlist(keywords)
+  i <- dataframe
+  # This is an AND loop for the keywords.
+  for (keyword in keywords) {
+    i <- 
+      i %>% 
+      select(where(is.character)) %>% 
+      filter(if_any(everything(), ~ grepl(paste0("\\b", keyword, "\\b"), ., ignore.case = T)))
+  }
+  # Get the accessions left over.
+  acc <-
+    i %>% 
+    select(acc)
+  # Filter the dataframe arg with the acc left over and sum mbytes.
+  n <-
+    dataframe %>% 
+    semi_join(acc, by = "acc") %>% 
+    summarise(sum = sum(mbytes)) %>% 
+    pull(sum)
+  # Print in Gb.
+  print(paste0(n/1000, " Gb")) 
+}
 
 
 
 #### ---- RUBBISH ----
-for (keyword in keywords) {
-  keyword_list[keyword] <- 
-      as_tibble(sapply(y, function(x) { grep(keyword, x, ignore.case = T)}) %>%
-        lapply(., length) %>%
-        unlist)
-  
-}
-x <- as.data.frame(do.call(rbind, keyword_list))
-names(x) <- names(y)
-x<- x[ , colSums(x) != 0]
-x
 
-# intersections
-# whole body and female
-y %>% 
-  filter(if_any(everything(), ~ grepl('female', .)) & if_any(everything(), ~ grepl('female', .))) %>% 
-  count
-
-# matrix of keywords
-x <- c(1, 2, 3, 4)
-k <- 2
-combinations <- combn(keywords, k)
-mf <- data.frame()
 colnames(mf) <- keywords
 row.names(mf) <- 
 # The number of columns of the matrix is the number of elements in each combination (k).
