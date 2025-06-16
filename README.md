@@ -17,8 +17,8 @@ now search across the entire SRA by sequencing methodologies and sample
 attributes.”<br>
 
 A simple SQL query will be used to retrieve a table for further analysis
-in R. The sample attributes are an inconsistent mess and rather than
-trying to sort that with complex SQL queries, I’ll just use R.
+in R. The sample attributes are an inconsistent mess. R will be used to
+filter the table.
 
 ## Script
 
@@ -199,7 +199,7 @@ jattr_tibble <-
   do.call(plyr::rbind.fill, .) %>% 
   as_tibble
 
-jattr_df <- as_tibble(cbind(df[, !names(df) %in% c("attributes", "jattr")], jattr_tibble), .name_repair = "unique")
+df_wide <- as_tibble(cbind(df[, !names(df) %in% c("attributes", "jattr")], jattr_tibble), .name_repair = "unique")
 ```
 
     ## New names:
@@ -210,134 +210,159 @@ jattr_df <- as_tibble(cbind(df[, !names(df) %in% c("attributes", "jattr")], jatt
 
 #### Data analysis
 
-I’m interested in sectioning the RNA-seq data by caste and large body
-structure initially. The keywords to look for across the expanded table
-are listed in the code chunk below.<br>
+The RNA-seq data will be sectioned by caste and large body structure
+initially. Only adult bees produce honey or royal jelly therefore
+earlier developmental stages will be excluded. The keywords are listed
+in the code chunk below.<br>
 
 ``` r
-# Get only the character columns.
-df_chr <-
-  jattr_df %>% 
-  select(where(is.character))
-```
+# Table occurrences of keywords by column.
 
-``` r
-# Define keywords. Note "whole.body" is used so regex searches for any character none or more times in between
-# the two words.
-keywords <- c("female", "male", "drone", "queen", "worker", "nurse", "forager", "whole.body", "head", "thorax", "abdomen")
-keywords <- sort(keywords)
+# Define keywords and exclusions. 
+# Note: bounded words \\b;
+#       plural forms included;
+#       "whole.?body" is used so regex searches for any character in between the two words 0 or 1 time.
+keywords <- c("abdomen", "drone", "female", "forager", "head", "male", "nurse", "queen", "thorax", "whole body", "worker")
+keywords_re <- keywords
+keywords_re[-c(3, 6, 10)] <- paste0("\\b", keywords[-c(3, 6, 10)], "(s)?\\b")
+keywords_re[c(3, 6)] <- paste0("\\b", keywords[c(3,6)], "\\b")
+keywords_re[c(9,10)] <- c("\\bthora[xc](es)?\\b", "\\bwhole.?bod[yi](es)?\\b")
+
+exclusions_re <- 
+  c("embryo(s)?", "larva(e)?", "pupa(e)?") %>% 
+  paste0("\\b", ., "\\b")
+
+# Exclude rows from the expanded column
+rows_to_exclude <- list()
+for (exclude in exclusions_re) {
+  rows_to_exclude[[exclude]] <-
+    df_wide %>% 
+    select(where(is.character)) %>% 
+    sapply(., function(x) { grep(exclude, x, ignore.case = T)}) %>%
+    unlist %>% 
+    as.vector %>% 
+    unique
+}
+rows_to_exclude <- 
+  rows_to_exclude %>% 
+  unlist %>% 
+  unique
+df_wide_ex <- df_wide[-rows_to_exclude, ]
 
 # Grep each row of the table for the keyword, producing a list of all columns
 # with the row number under the column the keyword appeared in.
 # Count the number of row indices for each column (length).
 keyword_list <- list()
-for (keyword in keywords) {
-  keyword_list[keyword] <- 
-      as_tibble(sapply(df_chr, function(x) { grep(keyword, x, ignore.case = T)}) %>%
-        lapply(., length) %>%
-        unlist)
+for (keyword in keywords_re) {
+  keyword_list[[keyword]] <- 
+    df_wide_ex %>% 
+    select(where(is.character)) %>%
+    sapply(., function(x) { grep(keyword, x, ignore.case = T)}) %>%
+    lapply(., length) %>% 
+    unlist
 }
 
 # Tidy.
 keyword_find <- as.data.frame(do.call(rbind, keyword_list))
-names(keyword_find) <- names(df_chr)
 keyword_find <- keyword_find[ , colSums(keyword_find) != 0]
 ncol(keyword_find) # the keywords appear in this many columns of the expanded metadata.
 ```
 
-    ## [1] 36
+    ## [1] 27
 
 <br>
 
 The table below gives the number of times any keyword appears in a
-column, there are 34 columns in total.
+column.
 
 ``` r
 # Summary of keyword spread.
 data.frame(freq = sort(colSums(keyword_find), decreasing = T)) # most frequent columns
 ```
 
-    ##                                  freq
-    ## sex_calc                         2339
-    ## tissue_sam_ss_dpl145             1202
-    ## caste_sam                         477
-    ## isolate_sam_ss_dpl100             443
-    ## source_name_sam                   419
-    ## sample_name                       412
-    ## dev_stage_sam                     374
-    ## library_name                      182
-    ## age_sam                           151
-    ## sample_type_sam_ss_dpl131          99
-    ## group_sam                          88
-    ## isolation_source_sam               56
-    ## tissue_exp                         49
-    ## sex_type_sam                       48
-    ## developmental_stage_sam            40
-    ## altitude_sam_s_dpl11               32
-    ## treatment_sam_ss_dpl55             28
-    ## individual_sam                     24
-    ## primary_search                     21
-    ## tissue_type_sam_s_dpl410           20
-    ## host_tissue_sampled_sam_s_dpl239   17
-    ## sample_name_sam                    15
-    ## body_part_sam                      15
-    ## experimental_factor__caste_exp     14
-    ## submitter_id_sam                   14
-    ## bee_type_sam                       12
-    ## behavioural_type_sam               12
-    ## phenotype_sam                      11
-    ## social_caste_sam                    9
-    ## center_name                         7
-    ## breed_sam                           5
-    ## development_stage_sam               4
-    ## behavioral_state_sam                4
-    ## infected_with_sam                   3
-    ## comment_sam                         2
-    ## geo_loc_name_sam                    1
+    ##                                freq
+    ## tissue_sam_ss_dpl145            999
+    ## sex_calc                        943
+    ## caste_sam                       454
+    ## isolate_sam_ss_dpl100           368
+    ## dev_stage_sam                   306
+    ## source_name_sam                 185
+    ## sample_name                     164
+    ## age_sam                         119
+    ## group_sam                        88
+    ## sample_type_sam_ss_dpl131        63
+    ## sex_type_sam                     48
+    ## developmental_stage_sam          40
+    ## library_name                     36
+    ## isolation_source_sam             35
+    ## altitude_sam_s_dpl11             32
+    ## treatment_sam_ss_dpl55           24
+    ## tissue_type_sam_s_dpl410         20
+    ## experimental_factor__caste_exp   14
+    ## behavioural_type_sam             12
+    ## phenotype_sam                    11
+    ## social_caste_sam                  9
+    ## center_name                       6
+    ## breed_sam                         5
+    ## behavioral_state_sam              4
+    ## infected_with_sam                 3
+    ## comment_sam                       2
+    ## sample_name_sam                   1
 
 <br>
 
-Ideally I want to find SRA runs that are clearly defined by caste:tissue
-or sex:tissue. This can be achieved by using grep and the & logical
-operator. I’ll see whats available with all two-keyword
-combinations.<br>
+SRA runs that are clearly defined by caste:tissue or sex:tissue will be
+summarised and examined further. Two keyword combinations will be used
+to search across all character columns. Number of SRA runs and the total
+file size can then be calculated.<br>
 
 ``` r
 # All combinations (x2) of keywords with replacement and distinct items.
-key_key <- arrangements::combinations(x = keywords, k = 2, replace = TRUE)
-
-# Add word boundaries for grep so that male is not pulled from female or other unforeseen cases.
-bounded_keys <- apply(t(key_key), 1, function(x) { paste0("\\b", x, "\\b") })
+keywords_x2 <- arrangements::combinations(x = keywords_re, k = 2, replace = TRUE)
 
 # Filter for both keywords, ignore case.
-df_chr_searched <- apply(bounded_keys, 1, function(x) {
-  jattr_df %>% 
+df_wide_in <- apply(keywords_x2, 1, function(x) {
+  df_wide_ex %>% 
     select(where(is.character)) %>% 
     filter(if_any(everything(), ~ grepl(x[1], ., ignore.case = T)) & if_any(everything(), ~ grepl(x[2], ., ignore.case = T)))
 })
-df_searched_count <- lapply(df_chr_searched, count)
+df_wide_in_count <- lapply(df_wide_in, count)
 
 # Combine keyword combinations and their counts.
-key_key_count <- as.data.frame(cbind(key_key, unlist(df_searched_count)))
+keywords_x2_count <-
+  as.data.frame(cbind(
+    arrangements::combinations(x = keywords, k = 2, replace = TRUE),
+    unlist(df_wide_in_count)))
+```
 
-# Use df_chr_searched to get total size of all SRA runs for each combination.
-acc <- lapply(df_chr_searched, select, acc)
-df_gb_searched <- lapply(acc, function(x) {
-  jattr_df %>% 
-    semi_join(x, by = "acc") %>% 
-    summarise(sum = sum(mbytes)) %>% 
-    pull(sum)
-})
+<br>
+
+Compute power is limited so file size is a big consideration.
+
+``` r
+# df_wide_in contains only the chr columns, need 'mbytes' column from df_wide
+df_wide_sizes <-
+  df_wide_in %>% 
+  lapply(., select, acc) %>% 
+  lapply(., function(x) {
+    df_wide %>% 
+      semi_join(x, by = "acc") %>% 
+      summarise(sum = sum(mbytes)) %>% 
+      pull(sum)
+  })
+
 
 # Add gb info to key_key_count table. 
-key_key_count$gb <- round(unlist(df_gb_searched)/1000, digits = 0)
+keywords_x2_count$gb <- round(unlist(df_wide_sizes)/1000, digits = 0)
 
-# Duplicate the counts for the reciprocal combinations to make the plots more readable.
-recip_key_key_count <- cbind(V2 = key_key_count$V1, V1 = key_key_count$V2, V3 = key_key_count$V3, gb = key_key_count$gb)
-key_key_count <- rbind(key_key_count, recip_key_key_count)
-key_key_count <- key_key_count[!duplicated(key_key_count), ]
-key_key_count$V3 <- as.numeric(key_key_count$V3)
-key_key_count$gb <- as.numeric(key_key_count$gb)
+# Duplicate the counts for the reciprocal combinations to make the plot more readable.
+recip_key_x2_count <- 
+  rename(keywords_x2_count, V1 = V2, V2 = V1) %>% 
+  bind_rows(., keywords_x2_count) %>% 
+  distinct
+  
+recip_key_x2_count$V3 <- as.numeric(recip_key_x2_count$V3)
+recip_key_x2_count$gb <- as.numeric(recip_key_x2_count$gb)
 ```
 
 <br>
@@ -345,7 +370,7 @@ key_key_count$gb <- as.numeric(key_key_count$gb)
 #### Plot
 
 ``` r
-ggplot(key_key_count, aes(V1, V2)) +
+ggplot(recip_key_x2_count, aes(V1, V2)) +
   geom_tile(aes(fill = V3)) +
   geom_text(aes(label = V3)) +
   scale_fill_gradient(low = "white",
@@ -368,10 +393,13 @@ ggplot(key_key_count, aes(V1, V2)) +
         strip.background = element_rect(color = "grey60", fill = "white"))
 ```
 
-![](README_files/figure-gfm/analysis5-1.png)<!-- -->
+![](README_files/figure-gfm/analysis6-1.png)<!-- --> <br>
+
+Total SRA run file sizes. I assume original file size, not SRAlite file
+size.
 
 ``` r
-ggplot(key_key_count, aes(V1, V2)) +
+ggplot(recip_key_x2_count, aes(V1, V2)) +
   geom_tile(aes(fill = gb)) +
   geom_text(aes(label = gb)) +
   scale_fill_gradient(low = "white",
@@ -394,4 +422,4 @@ ggplot(key_key_count, aes(V1, V2)) +
         strip.background = element_rect(color = "grey60", fill = "white"))
 ```
 
-![](README_files/figure-gfm/analysis5-2.png)<!-- --> <br>
+![](README_files/figure-gfm/analysis7-1.png)<!-- --> <br>

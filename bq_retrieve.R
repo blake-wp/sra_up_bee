@@ -73,7 +73,7 @@ jattr_tibble <-
   do.call(plyr::rbind.fill, .) %>% 
   as_tibble
 
-jattr_df <- as_tibble(cbind(df[, !names(df) %in% c("attributes", "jattr")], jattr_tibble), .name_repair = "unique")
+df_wide <- as_tibble(cbind(df[, !names(df) %in% c("attributes", "jattr")], jattr_tibble), .name_repair = "unique")
 
 
 #### ---- Data analysis ----
@@ -91,76 +91,103 @@ glimpse(df)
 
 # Table occurrences of keywords by column.
 
-# Get only the character columns
-df_chr <-
-  jattr_df %>% 
-  select(where(is.character))
+# Define keywords and exclusions. 
+# Note: bounded words;
+#       optional 's' on the end;
+#       "whole.body" is used so regex searches for any character none or more times in between the two words.
+keywords <- 
+  c("female", "male", "drone", "queen", "worker", "nurse", "forager", "whole.body", "head", "thorax", "abdomen") %>% 
+  sort
+keywords_re <- paste0("\\b", keywords, "(s)?\\b")
 
-# Define keywords.
-keywords <- c("female", "male", "drone", "queen", "worker", "nurse", "forager", "whole.body", "head", "thorax", "abdomen")
-keywords <- sort(keywords)
+exclusions_re <- 
+  c("embryo(s)?", "larva", "larvae", "pupa", "pupae") %>% 
+  paste0("\\b", ., "\\b")
+
+# Exclude rows from the expanded column
+rows_to_exclude <- list()
+for (exclude in exclusions_re) {
+  rows_to_exclude[[exclude]] <-
+    df_wide %>% 
+    select(where(is.character)) %>% 
+    sapply(., function(x) { grep(exclude, x, ignore.case = T)}) %>%
+    unlist %>% 
+    as.vector %>% 
+    unique
+}
+rows_to_exclude <- 
+  rows_to_exclude %>% 
+  unlist %>% 
+  unique
+df_wide_ex <- df_wide[-rows_to_exclude, ]
 
 # Grep each row of the table for the keyword, producing a list of all columns
 # with the row number under the column the keyword appeared in.
 # Count the number of row indices for each column (length).
 keyword_list <- list()
-for (keyword in keywords) {
-  keyword_list[keyword] <- 
-    as_tibble(sapply(df_chr, function(x) { grep(keyword, x, ignore.case = T)}) %>%
-                lapply(., length) %>%
-                unlist)
+for (keyword in keywords_re) {
+  keyword_list[[keyword]] <- 
+    df_wide_ex %>% 
+    select(where(is.character)) %>%
+    sapply(., function(x) { grep(keyword, x, ignore.case = T)}) %>%
+    lapply(., length) %>% 
+    unlist
 }
 
 # Tidy.
 keyword_find <- as.data.frame(do.call(rbind, keyword_list))
-names(keyword_find) <- names(df_chr)
 keyword_find <- keyword_find[ , colSums(keyword_find) != 0]
-ncol(keyword_find) # the keywords appear in 34 columns of the expanded metadata.
+ncol(keyword_find) # the keywords appear in this many columns of the expanded metadata.
 
 # Summary of keyword spread.
 data.frame(freq = sort(colSums(keyword_find), decreasing = T)) # most frequent columns
 
-###
-
+#########
 # All combinations (x2) of keywords with replacement and distinct items.
-key_key <- arrangements::combinations(x = keywords, k = 2, replace = TRUE)
-
-# Add word boundaries for grep so that male is not pulled from female or other unforeseen cases.
-bounded_keys <- apply(t(key_key), 1, function(x) { paste0("\\b", x, "\\b") })
+keywords_x2 <- arrangements::combinations(x = keywords_re, k = 2, replace = TRUE)
 
 # Filter for both keywords, ignore case.
-df_chr_searched <- apply(bounded_keys, 1, function(x) {
-  jattr_df %>% 
+df_wide_in <- apply(keywords_x2, 1, function(x) {
+  df_wide_ex %>% 
     select(where(is.character)) %>% 
     filter(if_any(everything(), ~ grepl(x[1], ., ignore.case = T)) & if_any(everything(), ~ grepl(x[2], ., ignore.case = T)))
 })
-df_searched_count <- lapply(df_chr_searched, count)
+df_wide_in_count <- lapply(df_wide_in, count)
 
 # Combine keyword combinations and their counts.
-key_key_count <- as.data.frame(cbind(key_key, unlist(df_searched_count)))
+keywords_x2_count <-
+  as.data.frame(cbind(
+    arrangements::combinations(x = keywords, k = 2, replace = TRUE),
+    unlist(df_wide_in_count)))
 
-# Use df_chr_searched to get total size of all SRA runs for each combination.
-df_chr_searched
-acc <- lapply(df_chr_searched, select, acc)
-df_gb_searched <- lapply(acc, function(x) {
-  jattr_df %>% 
-    semi_join(x, by = "acc") %>% 
-    summarise(sum = sum(mbytes)) %>% 
-    pull(sum)
-})
+###
+
+# df_wide_in contains only the chr columns, need 'mbytes' column from df_wide
+df_wide_sizes <-
+  df_wide_in %>% 
+  lapply(., select, acc) %>% 
+  lapply(., function(x) {
+    df_wide %>% 
+      semi_join(x, by = "acc") %>% 
+      summarise(sum = sum(mbytes)) %>% 
+      pull(sum)
+  })
+
 
 # Add gb info to key_key_count table. 
-key_key_count$gb <- round(unlist(df_gb_searched)/1000, digits = 0)
+keywords_x2_count$gb <- round(unlist(df_wide_sizes)/1000, digits = 0)
 
 # Duplicate the counts for the reciprocal combinations to make the plot more readable.
-recip_key_key_count <- cbind(V2 = key_key_count$V1, V1 = key_key_count$V2, V3 = key_key_count$V3, gb = key_key_count$gb)
-key_key_count <- rbind(key_key_count, recip_key_key_count)
-key_key_count <- key_key_count[!duplicated(key_key_count), ]
-key_key_count$V3 <- as.numeric(key_key_count$V3)
-key_key_count$gb <- as.numeric(key_key_count$gb)
+recip_key_x2_count <- 
+  rename(keywords_x2_count, V1 = V2, V2 = V1) %>% 
+  bind_rows(., keywords_x2_count) %>% 
+  distinct
+  
+recip_key_x2_count$V3 <- as.numeric(recip_key_x2_count$V3)
+recip_key_x2_count$gb <- as.numeric(recip_key_x2_count$gb)
 
 
-ggplot(key_key_count, aes(V1, V2)) +
+ggplot(recip_key_x2_count, aes(V1, V2)) +
   geom_tile(aes(fill = V3)) +
   geom_text(aes(label = V3)) +
   scale_fill_gradient(low = "white",
@@ -184,7 +211,7 @@ ggplot(key_key_count, aes(V1, V2)) +
 
 
   
-ggplot(key_key_count, aes(V1, V2)) +
+ggplot(recip_key_x2_count, aes(V1, V2)) +
   geom_tile(aes(fill = gb)) +
   geom_text(aes(label = gb)) +
   scale_fill_gradient(low = "white",
@@ -243,7 +270,14 @@ calc_mbytes <- function(dataframe, ...) {
   print(paste0(n/1000, " Gb")) 
 }
 
-
+# case1 where (female OR worker) AND whole.body
+df_chr_case1 <-
+  df_wide %>% 
+    select(where(is.character)) %>% 
+    filter(
+      (if_any(everything(), ~ grepl("female", ., ignore.case = T)) | if_any(everything(), ~ grepl("worker", ., ignore.case = T))) & if_any(everything(), ~ grepl("whole.body", ., ignore.case = T))
+    )
+df_case1_count <- lapply(df_chr_case1, count)
 
 #### ---- RUBBISH ----
 
@@ -259,7 +293,7 @@ resulting_matrix <- matrix(combinations, nrow = num_rows, ncol = num_cols)
 
 
 y <-
-  jattr_df %>%
+  df_wide %>%
   mutate(found_in = pmap_chr(across(everything()), ~ {
     cols_with_string <- names(.)[sapply(list(...), function(x) grepl("female", x))]
     if (length(cols_with_string) > 0) {
@@ -283,18 +317,18 @@ y <-
 
 
 
-jattr_df %>%
+df_wide %>%
   group_by(acc) %>% 
   
   mutate(found_in = pmap_chr(across(everything()),
 
 cols_with_string <- names(y)[sapply(tibble_as_list, function(x) { grepl(".*female.*", x, ignore.case = T) })]
 
-jattr_df %>% 
+df_wide %>% 
   select(where(is.character)) %>% 
   mutate(female = rowSums(across(all_of(cols), `%in%`, "female")))
 
-jattr_df %>% 
+df_wide %>% 
   select(where(is.character)) %>% 
   rowwise() %>% 
   mutate(female_count = sum(str_detect(c_across(everything()), fixed("female")))) %>% 
@@ -304,7 +338,7 @@ jattr_df %>%
   
 
 
-jattr_df %>% mutate(d9 = rowSums(across(., `%in%`, "female")))
+df_wide %>% mutate(d9 = rowSums(across(., `%in%`, "female")))
 
 
 # Attributes column is in JSON format and contains the sample descriptions.
@@ -323,7 +357,7 @@ jattr_tibble <-
   do.call(plyr::rbind.fill, .) %>% 
   as_tibble
 
-jattr_df <- as_tibble(cbind(bioproject = df$bioproject, acc = df$acc, jattr_tibble))
+df_wide <- as_tibble(cbind(bioproject = df$bioproject, acc = df$acc, jattr_tibble))
 
 jattr_tibble %>%
   summarise_all(~ sum(!is.na(.))) %>% 
@@ -338,7 +372,7 @@ as.data.frame(
 })
 )
 
-jattr_df %>% 
+df_wide %>% 
   mutate(tissue1 = str_to_lower(tissue_sam_ss_dpl145), .after = acc) %>% 
   filter(str_detect(tissue1, "thorax")) %>% 
   group_by(bioproject, tissue1) %>% 
