@@ -106,8 +106,16 @@ glimpse(df)
     ## $ jattr                               <chr> "{\"geo_accession_exp\": [\"GSM336…
 
 ``` r
-# Any NA rows for primary key 'acc'?
-is.na(df$acc) %>% table()
+# Any NA rows or duplicates for primary key 'acc'?
+is.na(df$acc) %>% table() # None
+```
+
+    ## .
+    ## FALSE 
+    ##  4692
+
+``` r
+duplicated(df$acc) %>% table() # None
 ```
 
     ## .
@@ -273,7 +281,10 @@ ncol(keyword_find) # the keywords appear in this many columns of the expanded me
 <br>
 
 The table below gives the number of times any keyword appears in a
-column.
+column. One or more of these columns sometimes contain a brief method
+description which may mention a keyword but the run itself is not
+related to that keyword. These need to be filtered out by their length.
+Elements with \>60 characters will be excluded.
 
 ``` r
 # Summary of keyword spread.
@@ -308,6 +319,82 @@ data.frame(freq = sort(colSums(keyword_find), decreasing = T)) # most frequent c
     ## infected_with_sam                 3
     ## comment_sam                       2
     ## sample_name_sam                   1
+
+<br>
+
+``` r
+# Exclude cells with >60 chars
+
+# Holds the row numbers where a match is found
+keyword_list_filter <- list()
+for (keyword in keywords_re) {
+  keyword_list_filter[[keyword]] <- 
+    df_wide_ex %>% 
+    select(where(is.character)) %>%
+    sapply(., function(x) { grep(keyword, x, ignore.case = T)})
+}
+names(keyword_list_filter) <- keywords
+
+# Function to test if the number of characters in the matched cell is <60 chars, returns row number or zero if >=60.
+return_rows <- function(row_ref, field_name) {
+  ifelse(nchar(df_wide_ex[row_ref, field_name]) < 60, row_ref, 0)
+}
+
+# Put the row references in a new list.
+new_list <- list()
+for(key in names(keyword_list_filter)) {
+    for(field in names(keyword_list_filter[[key]])) {
+      new_list[[key]][[field]] <- 
+        if(length(keyword_list_filter[[key]][[field]]) > 0) {
+          sapply(keyword_list_filter[[key]][[field]], return_rows, field)
+        }
+    }
+}
+
+# Filter out lists of all zeros and zeros within lists.
+filtered_list <- 
+  new_list %>% 
+  lapply(., function(x) {
+    lapply(x, function(y) {
+      y[sapply(y, function(z) {z != 0})]
+    })
+  }) %>% 
+  lapply(., function(x) {
+    Filter(function(y) sum(y) != 0, x)
+  })
+
+# Summary of more accurate keyword spread.
+filtered_list_counts <- 
+  filtered_list %>%
+  lapply(., function(x) {
+    lapply(x, length)
+  }) %>%
+  unlist %>% 
+  data.frame(freq = .)
+
+# Summary of more accurate keyword spread.
+row.names(filtered_list_counts) %>% 
+  gsub(".*\\.", "", .) %>% 
+  tibble(field = ., freq = filtered_list_counts$freq) %>% 
+  group_by(field) %>% 
+  summarise(sum = sum(freq)) %>% 
+  arrange(desc(sum))
+```
+
+    ## # A tibble: 27 × 2
+    ##    field                       sum
+    ##    <chr>                     <int>
+    ##  1 tissue_sam_ss_dpl145        974
+    ##  2 sex_calc                    943
+    ##  3 caste_sam                   454
+    ##  4 dev_stage_sam               306
+    ##  5 isolate_sam_ss_dpl100       302
+    ##  6 source_name_sam             161
+    ##  7 sample_name                 156
+    ##  8 age_sam                     119
+    ##  9 group_sam                    88
+    ## 10 sample_type_sam_ss_dpl131    63
+    ## # ℹ 17 more rows
 
 <br>
 

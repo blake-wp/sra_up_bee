@@ -31,8 +31,9 @@ if (inherits(df, "try-error")) {
 
 glimpse(df)
 
-# Any NA rows for primary key 'acc'?
+# Any NA rows or duplicates for primary key 'acc'?
 is.na(df$acc) %>% table() # None
+duplicated(df$acc) %>% table() # None
 
 # Check file sizes
 is.na(df$mbytes) %>% table()  # None
@@ -47,7 +48,8 @@ df %>%
 
 df %>% 
   filter(bioproject == "PRJNA477521") %>% 
-  select(acc, mbases, mbytes, library_name)
+  select(acc, mbases, mbytes, library_name) %>% 
+  glimpse
 
 # One bioproject with samples with blank reads? Remove from list.
 df <-
@@ -86,22 +88,23 @@ df_wide <- as_tibble(cbind(df[, !names(df) %in% c("attributes", "jattr")], jattr
 #   Brief summary of above 4 categories before dividing further.
 
 
-glimpse(df)
+glimpse(df_wide)
 
 
 # Table occurrences of keywords by column.
 
 # Define keywords and exclusions. 
-# Note: bounded words;
-#       optional 's' on the end;
-#       "whole.body" is used so regex searches for any character none or more times in between the two words.
-keywords <- 
-  c("female", "male", "drone", "queen", "worker", "nurse", "forager", "whole.body", "head", "thorax", "abdomen") %>% 
-  sort
-keywords_re <- paste0("\\b", keywords, "(s)?\\b")
+# Note: bounded words \\b;
+#       plural forms included;
+#       "whole.?body" is used so regex searches for any character in between the two words 0 or 1 time.
+keywords <- c("abdomen", "drone", "female", "forager", "head", "male", "nurse", "queen", "thorax", "whole body", "worker")
+keywords_re <- keywords
+keywords_re[-c(3, 6, 10)] <- paste0("\\b", keywords[-c(3, 6, 10)], "(s)?\\b")
+keywords_re[c(3, 6)] <- paste0("\\b", keywords[c(3,6)], "\\b")
+keywords_re[c(9,10)] <- c("\\bthora[xc](es)?\\b", "\\bwhole.?bod[yi](es)?\\b")
 
 exclusions_re <- 
-  c("embryo(s)?", "larva", "larvae", "pupa", "pupae") %>% 
+  c("embryo(s)?", "larva(e)?", "pupa(e)?") %>% 
   paste0("\\b", ., "\\b")
 
 # Exclude rows from the expanded column
@@ -141,6 +144,67 @@ ncol(keyword_find) # the keywords appear in this many columns of the expanded me
 
 # Summary of keyword spread.
 data.frame(freq = sort(colSums(keyword_find), decreasing = T)) # most frequent columns
+
+#############
+# Exclude cells with >60 chars
+
+# holds the row numbers where a match is found
+keyword_list_filter <- list()
+for (keyword in keywords_re) {
+  keyword_list_filter[[keyword]] <- 
+    df_wide_ex %>% 
+    select(where(is.character)) %>%
+    sapply(., function(x) { grep(keyword, x, ignore.case = T)})
+}
+names(keyword_list_filter) <- keywords
+
+# Function to test if the number of characters in the matched cell is <60 and therefore not a method description.
+return_rows <- function(row_ref, field_name) {
+  ifelse(nchar(df_wide_ex[row_ref, field_name]) < 60, row_ref, 0)
+}
+
+# Put the row references in a new list.
+new_list <- list()
+for(key in names(keyword_list_filter)) {
+    for(field in names(keyword_list_filter[[key]])) {
+      new_list[[key]][[field]] <- 
+        if(length(keyword_list_filter[[key]][[field]]) > 0) {
+          sapply(keyword_list_filter[[key]][[field]], return_rows, field)
+        }
+    }
+}
+
+# Filter out 0 from the list of excluded rows
+filtered_list <- 
+  new_list %>% 
+  lapply(., function(x) {
+    lapply(x, function(y) {
+      y[sapply(y, function(z) {z != 0})]
+    })
+  }) %>% 
+  lapply(., function(x) {
+    Filter(function(y) sum(y) != 0, x)
+  })
+
+# Summary of more accurate keyword spread.
+test <- 
+  filtered_list %>%
+  lapply(., function(x) {
+    lapply(x, length)
+  }) %>%
+  unlist %>% 
+  data.frame(freq = .)
+
+row.names(test) %>% 
+  gsub(".*\\.", "", .) %>% 
+  tibble(field = ., freq = test$freq) %>% 
+  group_by(field) %>% 
+  summarise(sum = sum(freq)) %>% 
+  arrange(desc(sum))
+  
+
+
+
 
 #########
 # All combinations (x2) of keywords with replacement and distinct items.
@@ -281,6 +345,12 @@ df_case1_count <- lapply(df_chr_case1, count)
 
 #### ---- RUBBISH ----
 
+z<-df_wide_ex %>% 
+  select(where(is.character)) %>% 
+  filter(if_any(everything(), ~ grepl("\\bthora[xc](es)?\\b", ., ignore.case = T)) &
+           if_any(everything(), ~ grepl("\\bthora[xc](es)?\\b", ., ignore.case = T)))
+
+
 colnames(mf) <- keywords
 row.names(mf) <- 
 # The number of columns of the matrix is the number of elements in each combination (k).
@@ -380,7 +450,8 @@ df_wide %>%
   arrange(desc(n))
   
 
-    
+keyword_list_filter %>% 
+  
 
 
 
