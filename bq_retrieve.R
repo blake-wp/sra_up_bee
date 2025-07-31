@@ -1,7 +1,6 @@
 library(tidyverse)
 library(bigrquery)
 library(dotenv)
-library(ggplot2)
 
 rm(list = ls())
 #### ---- Data import ----
@@ -145,10 +144,10 @@ ncol(keyword_find) # the keywords appear in this many columns of the expanded me
 # Summary of keyword spread.
 data.frame(freq = sort(colSums(keyword_find), decreasing = T)) # most frequent columns
 
-#############
-# Exclude cells with >60 chars
+###
+# Exclude matches with >60 chars
 
-# holds the row numbers where a match is found
+# Holds the row numbers where a match is found
 keyword_list_filter <- list()
 for (keyword in keywords_re) {
   keyword_list_filter[[keyword]] <- 
@@ -158,7 +157,7 @@ for (keyword in keywords_re) {
 }
 names(keyword_list_filter) <- keywords
 
-# Function to test if the number of characters in the matched cell is <60 and therefore not a method description.
+# Function to test if the number of characters in the matched cell is <60 chars, returns row number or zero if >=60.
 return_rows <- function(row_ref, field_name) {
   ifelse(nchar(df_wide_ex[row_ref, field_name]) < 60, row_ref, 0)
 }
@@ -166,15 +165,15 @@ return_rows <- function(row_ref, field_name) {
 # Put the row references in a new list.
 new_list <- list()
 for(key in names(keyword_list_filter)) {
-    for(field in names(keyword_list_filter[[key]])) {
-      new_list[[key]][[field]] <- 
-        if(length(keyword_list_filter[[key]][[field]]) > 0) {
-          sapply(keyword_list_filter[[key]][[field]], return_rows, field)
-        }
-    }
+  for(field in names(keyword_list_filter[[key]])) {
+    new_list[[key]][[field]] <- 
+      if(length(keyword_list_filter[[key]][[field]]) > 0) {
+        sapply(keyword_list_filter[[key]][[field]], return_rows, field)
+      }
+  }
 }
 
-# Filter out 0 from the list of excluded rows
+# Filter out lists of all zeros and zeros within lists.
 filtered_list <- 
   new_list %>% 
   lapply(., function(x) {
@@ -187,7 +186,7 @@ filtered_list <-
   })
 
 # Summary of more accurate keyword spread.
-test <- 
+filtered_list_counts <- 
   filtered_list %>%
   lapply(., function(x) {
     lapply(x, length)
@@ -195,20 +194,32 @@ test <-
   unlist %>% 
   data.frame(freq = .)
 
-row.names(test) %>% 
+# Summary of more accurate keyword spread.
+row.names(filtered_list_counts) %>% 
   gsub(".*\\.", "", .) %>% 
-  tibble(field = ., freq = test$freq) %>% 
+  tibble(field = ., freq = filtered_list_counts$freq) %>% 
   group_by(field) %>% 
   summarise(sum = sum(freq)) %>% 
   arrange(desc(sum))
-  
+###
+# Use the same process for keyword combinations
+# first replace cells >100 char with NA in df_wide_ex?
+# df_wide_ex2 <-
+#   df_wide_ex %>% 
+#   mutate(across(where(is.character), sapply, function(x){
+#     if_else(nchar(x) > 100, NA, x, missing = NA)
+#   }))
+df_wide_ex2 <-
+  df_wide_ex %>% 
+  mutate(across(where(is.character), function(x){
+    sapply(x, function(y) {
+      if_else(nchar(y) > 100, NA, y, missing = NA)
+    })
+  }))
 
-
-
-
-#########
 # All combinations (x2) of keywords with replacement and distinct items.
 keywords_x2 <- arrangements::combinations(x = keywords_re, k = 2, replace = TRUE)
+
 
 # Filter for both keywords, ignore case.
 df_wide_in <- apply(keywords_x2, 1, function(x) {
@@ -217,6 +228,7 @@ df_wide_in <- apply(keywords_x2, 1, function(x) {
     filter(if_any(everything(), ~ grepl(x[1], ., ignore.case = T)) & if_any(everything(), ~ grepl(x[2], ., ignore.case = T)))
 })
 df_wide_in_count <- lapply(df_wide_in, count)
+
 
 # Combine keyword combinations and their counts.
 keywords_x2_count <-
@@ -334,14 +346,34 @@ calc_mbytes <- function(dataframe, ...) {
   print(paste0(n/1000, " Gb")) 
 }
 
-# case1 where (female OR worker) AND whole.body
-df_chr_case1 <-
-  df_wide %>% 
+# case1 where whole.body
+wb_Fworker <-
+  df_wide_ex2 %>% 
     select(where(is.character)) %>% 
-    filter(
-      (if_any(everything(), ~ grepl("female", ., ignore.case = T)) | if_any(everything(), ~ grepl("worker", ., ignore.case = T))) & if_any(everything(), ~ grepl("whole.body", ., ignore.case = T))
-    )
-df_case1_count <- lapply(df_chr_case1, count)
+    filter((if_any(everything(), ~ grepl("whole.body", ., ignore.case = T)))) %>% 
+    filter((if_any(everything(), ~ grepl("\\bworker(s)?\\b", ., ignore.case = T))) | (if_any(everything(), ~ grepl("\\bfemale(s)?\\b", ., ignore.case = T))))
+
+# df_wide_in contains only the chr columns, need 'mbytes' column from df_wide
+wb_Fworker <-
+  df_wide_in %>% 
+  lapply(., select, acc) %>% 
+  lapply(., function(x) {
+    wb_Fworker %>% 
+      semi_join(x, by = "acc") %>% 
+      summarise(sum = sum(mbytes)) %>% 
+      pull(sum)
+  })
+
+# wb_male
+wb_male <-
+  df_wide_ex2 %>% 
+  select(where(is.character)) %>% 
+  filter((if_any(everything(), ~ grepl("whole.body", ., ignore.case = T)))) %>% 
+  filter((if_any(everything(), ~ grepl("\\bmale(s)\\b?", ., ignore.case = T))))
+wb <-
+  df_wide_ex2 %>% 
+  select(where(is.character)) %>% 
+  filter((if_any(everything(), ~ grepl("\\bwhole.?bod[yi](es)?\\b", ., ignore.case = T))))
 
 #### ---- RUBBISH ----
 
