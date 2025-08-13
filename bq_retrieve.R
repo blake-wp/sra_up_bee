@@ -62,7 +62,7 @@ nrow(df)
 # Expand 'jattr' and add it to the df. Drop 'jattr' and 'attributes' nested columns.
 library(jsonlite)
 parsed_jattr <- lapply(df$jattr, fromJSON)
-jattr_tibble <- 
+jattr_tibble <-
   lapply(parsed_jattr, function(x) { 
     t(cbind(names(x), as.character(unname(x))))
   }) %>% 
@@ -217,6 +217,9 @@ df_wide_ex2 <-
     })
   }))
 
+# export metadata
+write_csv(df_wide_ex2, "filtered_sra_metadata.csv", col_names = T, quote = "none")
+
 # All combinations (x2) of keywords with replacement and distinct items.
 keywords_x2 <- arrangements::combinations(x = keywords_re, k = 2, replace = TRUE)
 
@@ -252,6 +255,7 @@ df_wide_sizes <-
 
 # Add gb info to key_key_count table. 
 keywords_x2_count$gb <- round(unlist(df_wide_sizes)/1000, digits = 0)
+
 
 # Duplicate the counts for the reciprocal combinations to make the plot more readable.
 recip_key_x2_count <- 
@@ -376,137 +380,3 @@ wb <-
   filter((if_any(everything(), ~ grepl("\\bwhole.?bod[yi](es)?\\b", ., ignore.case = T))))
 
 #### ---- RUBBISH ----
-
-z<-df_wide_ex %>% 
-  select(where(is.character)) %>% 
-  filter(if_any(everything(), ~ grepl("\\bthora[xc](es)?\\b", ., ignore.case = T)) &
-           if_any(everything(), ~ grepl("\\bthora[xc](es)?\\b", ., ignore.case = T)))
-
-
-colnames(mf) <- keywords
-row.names(mf) <- 
-# The number of columns of the matrix is the number of elements in each combination (k).
-num_cols <- length(x)
-# The number of rows of the matrix is the total number of possible combinations.
-num_rows <- nrow(combinations)
-# For simplicity, reshape the matrix to have one column per combination.
-resulting_matrix <- matrix(combinations, nrow = num_rows, ncol = num_cols)
-
-
-
-y <-
-  df_wide %>%
-  mutate(found_in = pmap_chr(across(everything()), ~ {
-    cols_with_string <- names(.)[sapply(list(...), function(x) grepl("female", x))]
-    if (length(cols_with_string) > 0) {
-      paste(cols_with_string, collapse = ", ")
-    } else {
-      NA_character_
-    }
-  }))
-
-
-
-%>% 
-  filter(row_number() %in% unlist(sapply(., function(x) { grep("female", x)}))) %>% 
-  
-  
-  
-  
-  
-
-
-
-
-
-df_wide %>%
-  group_by(acc) %>% 
-  
-  mutate(found_in = pmap_chr(across(everything()),
-
-cols_with_string <- names(y)[sapply(tibble_as_list, function(x) { grepl(".*female.*", x, ignore.case = T) })]
-
-df_wide %>% 
-  select(where(is.character)) %>% 
-  mutate(female = rowSums(across(all_of(cols), `%in%`, "female")))
-
-df_wide %>% 
-  select(where(is.character)) %>% 
-  rowwise() %>% 
-  mutate(female_count = sum(str_detect(c_across(everything()), fixed("female")))) %>% 
-  ungroup() %>% 
-  filter(female_count != NA)
-  
-  
-
-
-df_wide %>% mutate(d9 = rowSums(across(., `%in%`, "female")))
-
-
-# Attributes column is in JSON format and contains the sample descriptions.
-library(jsonlite)
-parsed_jattr <- lapply(df$jattr, fromJSON)
-
-jattr_tibble <- 
-  lapply(parsed_jattr, function(x) { 
-    t(cbind(names(x), as.character(unname(x))))
-    }) %>% 
-  lapply(function(x) {
-    z <- as.data.frame(x[-1, ])
-    row.names(z) <- x[1, ]
-    as.data.frame(t(z))
-    }) %>% 
-  do.call(plyr::rbind.fill, .) %>% 
-  as_tibble
-
-df_wide <- as_tibble(cbind(bioproject = df$bioproject, acc = df$acc, jattr_tibble))
-
-jattr_tibble %>%
-  summarise_all(~ sum(!is.na(.))) %>% 
-  gather(column, value) %>% 
-  arrange(desc(value)) %>% 
-  print(n = 20)
-
-
-as.data.frame(
-  sapply(jattr_tibble, function(x) {
-  sum(!is.na(x))
-})
-)
-
-df_wide %>% 
-  mutate(tissue1 = str_to_lower(tissue_sam_ss_dpl145), .after = acc) %>% 
-  filter(str_detect(tissue1, "thorax")) %>% 
-  group_by(bioproject, tissue1) %>% 
-  count() %>% 
-  arrange(desc(n))
-  
-
-keyword_list_filter %>% 
-  
-
-
-
-
-
-tissue_sam <-
-  parsed_attributes %>% 
-  do.call(rbind, .) %>% 
-  do.call(rbind, .) %>%
-  as_tibble() %>%
-  filter(k == 'tissue_sam_ss_dpl145') %>% 
-  mutate(v = str_to_lower(v)) %>% 
-  count(v) %>% 
-  arrange(desc(n))
-
-isolate_sam <-
-  parsed_attributes %>% 
-  do.call(rbind, .) %>% 
-  do.call(rbind, .) %>%
-  as_tibble() %>%
-  filter(k == 'isolate_sam_ss_dpl100') %>% 
-  mutate(v = str_to_lower(v)) %>% 
-  count(v) %>% 
-  arrange(desc(n))
-
-# Create df with 'acc' and 'tissue_sam_ss_dpl145' coumns
