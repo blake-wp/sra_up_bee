@@ -244,13 +244,13 @@ process_a_subset <- function(df) {
       })
     }))
 
-  # export metadata
-  write_csv(
-    df_wide_ex2,
-    "filtered_sra_metadata.csv",
-    col_names = T,
-    quote = "none"
-  )
+  # # export metadata
+  # write_csv(
+  #   df_wide_ex2,
+  #   "filtered_sra_metadata.csv",
+  #   col_names = T,
+  #   quote = "none"
+  # )
 
   # All combinations (x2) of keywords with replacement and distinct items.
   keywords_x2 <- arrangements::combinations(
@@ -304,7 +304,7 @@ process_a_subset <- function(df) {
   return(recip_key_x2_count)
 }
 
-output <- process_a_subset(large_runs)
+output <- process_a_subset(data_to_parse)
 
 ggplot(output, aes(V1, V2)) +
   geom_tile(aes(fill = V3)) +

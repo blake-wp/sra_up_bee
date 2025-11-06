@@ -63,23 +63,27 @@ df <-
 
 # Plot histo of run sizes
 ggplot(df, aes(mbytes)) +
-  geom_histogram(binwidth = 100)
+  geom_histogram(binwidth = 200) +
+  ggtitle("Distribution of SRA run file size in the dataset (200 MB bins)") +
+  theme_minimal()
 
 # how many <5 Gb?
 smaller_files <-
   df |> filter(mbytes < 5000)
-smaller_files |> count()
+smaller_files |> count() # 4069
 
 ggplot(smaller_files, aes(mbytes)) +
-  geom_histogram()
+  geom_histogram(binwidth = 200) +
+  ggtitle("Distribution of SRA run file size in the dataset (200 MB bins)") +
+  theme_minimal()
 
 # Split into groups to better manage
 bin1 <-
   df |> filter(mbytes < 1001)
-write_lines(bin1$acc, "srr_0-1000_Gb.txt")
+write_lines(bin1$acc, "srr_0-1000_MB.txt")
 bin2 <-
   df |> filter(mbytes < 2001 & mbytes > 1000)
-write_lines(bin2$acc, "srr_1001-2000_Gb.txt")
+write_lines(bin2$acc, "srr_1001-2000_MB.txt")
 bin3 <-
   df |> filter(mbytes < 3001 & mbytes > 2000)
-write_lines(bin3$acc, "srr_2001-3000_Gb.txt")
+write_lines(bin3$acc, "srr_2001-3000_MB.txt")
