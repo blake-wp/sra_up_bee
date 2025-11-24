@@ -85,7 +85,7 @@ for (i in 0:9) {
     df |> filter(mbytes < (1001 + (1000 * i)) & mbytes > (1000 * i))
   )
   write_lines(
-    get(paste0("bin", i + 1)[[1]]),
+    get(paste0("bin", i + 1))[[1]],
     paste0("srr_", (1000 * i) + 1, "-", (1000 + (1000 * i)), "_MB.txt")
   )
 }
