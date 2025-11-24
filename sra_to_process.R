@@ -78,12 +78,14 @@ ggplot(smaller_files, aes(mbytes)) +
   theme_minimal()
 
 # Split into groups to better manage
-bin1 <-
-  df |> filter(mbytes < 1001)
-write_lines(bin1$acc, "srr_0-1000_MB.txt")
-bin2 <-
-  df |> filter(mbytes < 2001 & mbytes > 1000)
-write_lines(bin2$acc, "srr_1001-2000_MB.txt")
-bin3 <-
-  df |> filter(mbytes < 3001 & mbytes > 2000)
-write_lines(bin3$acc, "srr_2001-3000_MB.txt")
+
+for (i in 0:9) {
+  assign(
+    paste0("bin", i + 1),
+    df |> filter(mbytes < (1001 + (1000 * i)) & mbytes > (1000 * i))
+  )
+  write_lines(
+    get(paste0("bin", i + 1)[[1]]),
+    paste0("srr_", (1000 * i) + 1, "-", (1000 + (1000 * i)), "_MB.txt")
+  )
+}
