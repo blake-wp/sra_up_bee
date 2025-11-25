@@ -1,8 +1,6 @@
 library(tidyverse)
 library(jsonlite)
-library(stringr)
 library(dotenv)
-library(fuzzyjoin)
 
 rm(list = ls())
 
@@ -543,7 +541,7 @@ df_meta <- df %>%
 
 #### ---- Summary Data ----
 
-path = "C:/Users/BlakePaget/Manukamed Pharmaceutical Limited/Research - Project Files/BWP004 - Sequence Read Archive/2025_hisat2_data/"
+path = Sys.getenv("PATH_DATA")
 
 summary_files <- list.files(
   path = path,
@@ -555,7 +553,7 @@ summary_list <- lapply(summary_files, read_delim, delim = '\t')
 summary_combined <- reduce(summary_list, left_join, by = "Status")
 write_csv(
   summary_combined,
-  "C:/Users/BlakePaget/Manukamed Pharmaceutical Limited/Research - Project Files/BWP004 - Sequence Read Archive/summary_srr_0-2000_MB.csv",
+  paste0(Sys.getenv("PATH_PARENT"), "summary_srr_0-3000_MB.csv"),
   quote = "none"
 )
 
@@ -596,12 +594,11 @@ counts_files <- list.files(
 counts_list <- lapply(counts_files, read_delim, delim = '\t', skip = 1)
 counts_combined <- reduce(counts_list, left_join, by = "Geneid")
 
-csv_path <- "C:/Users/BlakePaget/Manukamed Pharmaceutical Limited/Research - Project Files/BWP004 - Sequence Read Archive/"
 csv_file_name <- "counts_srr_0-3000_MB.csv"
 
 write_csv(
   counts_combined,
-  paste0(csv_path, csv_file_name),
+  paste0(path, csv_file_name),
   quote = "none"
 )
 
@@ -671,7 +668,7 @@ z |>
     inf_count = sum(is.infinite(values)),
     nan_count = sum(is.nan(values))
   )
-#### ---- RUBBISH
+#### ---- RUBBISH ----
 
 # Check list of srr runs agains data collected
 
