@@ -2,6 +2,7 @@ library(tidyverse)
 library(jsonlite)
 library(stringr)
 library(dotenv)
+library(fuzzyjoin)
 
 rm(list = ls())
 
@@ -595,15 +596,18 @@ counts_files <- list.files(
 counts_list <- lapply(counts_files, read_delim, delim = '\t', skip = 1)
 counts_combined <- reduce(counts_list, left_join, by = "Geneid")
 
+csv_path <- "C:/Users/BlakePaget/Manukamed Pharmaceutical Limited/Research - Project Files/BWP004 - Sequence Read Archive/"
+csv_file_name <- "counts_srr_0-3000_MB.csv"
+
 write_csv(
   counts_combined,
-  "C:/Users/BlakePaget/Manukamed Pharmaceutical Limited/Research - Project Files/BWP004 - Sequence Read Archive/counts_srr_0-2000_MB.csv",
+  paste0(csv_path, csv_file_name),
   quote = "none"
 )
 
 # Read in CSV to avoid re-processing data
 counts_combined <- read_csv(
-  "C:/Users/BlakePaget/Manukamed Pharmaceutical Limited/Research - Project Files/BWP004 - Sequence Read Archive/counts_srr_0-1000_MB.csv",
+  paste0(csv_path, csv_file_name),
 )
 
 counts_scaled_100 <-
@@ -635,30 +639,81 @@ ggplot(x) +
 roi <- x |> filter(values > 10)
 
 
-y <- left_join(x, df_meta, by = "acc")
-y <- y |>
+y <- crossing(df_meta, x, .name_repair = "unique") |>
+  filter(str_detect(acc...24, acc...1))
+
+z <- y |>
   pivot_longer(
-    cols = -c(Geneid, acc, values),
+    cols = -c(Geneid, acc...1, acc...24, values),
     names_to = "Category",
     values_to = "Keyword"
   )
 
 ggplot(
-  data = y |> filter(Category == c("anatomical_terms", "bee_castes_roles"))
+  data = z |>
+    filter(
+      Category ==
+        c(
+          "anatomical_terms",
+          "bee_castes_roles",
+          "bee_species_types",
+          "biological_processes"
+        )
+    )
 ) +
   geom_boxplot(aes(x = Keyword, y = values)) +
   coord_flip() +
   facet_wrap(~Category, scales = "free_y")
 
-y |>
+z |>
   summarise(
     na_count = sum(is.na(values)),
     inf_count = sum(is.infinite(values)),
     nan_count = sum(is.nan(values))
   )
 #### ---- RUBBISH
-counts_scaled_100 |>
-  filter(Geneid == "LOC408608") |>
-  summarise(across(everything(), ~ any(is.na(.) | is.nan(.)))) %>%
-  pivot_longer(everything(), names_to = "column", values_to = "has_missing") %>%
-  filter(has_missing)
+
+# Check list of srr runs agains data collected
+
+srr_1 <- read_lines("srr_1-1000_MB.txt")
+srr_2 <- read_lines("srr_1001-2000_MB.txt")
+srr_3 <- read_lines("srr_2001-3000_MB.txt")
+srr_collected <- names(counts_scaled_100)[-1]
+
+
+length(srr_1) - sum(srr_1 %in% srr_collected) # There were three that couldnt be processed
+length(srr_2)
+sum(srr_2 %in% srr_collected)
+length(srr_3) - sum(srr_3 %in% srr_collected)
+
+mean_by_keyword <-
+  z %>%
+  group_by(Keyword) %>%
+  summarise(
+    mean_value = mean(values, na.rm = TRUE),
+    se = sd(values) / sqrt(n())
+  ) %>%
+  arrange(desc(mean_value)) |>
+  head(n = 20)
+
+ggplot(
+  data = mean_by_keyword,
+  aes(x = reorder(Keyword, -mean_value), y = mean_value)
+) +
+  geom_bar(stat = "identity") +
+  geom_errorbar(
+    aes(ymin = mean_value - se, ymax = mean_value + se),
+    width = 0.2
+  ) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+group_by_keyword <-
+  z %>%
+  group_by(Keyword) %>%
+  mutate(mean_value)
+arrange(desc(mean_value)) |>
+  head(n = 20)
+
+ggplot(data = group_by_keyword) +
+  geom_boxplot(aes(x = Keyword, y = values)) +
+  coord_flip()
