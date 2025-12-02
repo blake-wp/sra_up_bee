@@ -577,7 +577,7 @@ ggplot(summary_norm) +
   geom_point(aes(x = Assigned, y = Unassigned), size = 0.3) +
   xlab("Proportion Assigned") +
   ylab("Proportion Unassigned") +
-  ggtitle("Summary of Reads for SRR Runs of Size 0-1000 MB") +
+  ggtitle("Summary of Reads for SRR Runs of Size 0-3000 MB") +
   facet_wrap(~Unassigned_type)
 
 
@@ -604,7 +604,7 @@ write_csv(
 
 # Read in CSV to avoid re-processing data
 counts_combined <- read_csv(
-  paste0(csv_path, csv_file_name),
+  paste0(path, csv_file_name),
 )
 
 counts_scaled_100 <-
@@ -633,8 +633,6 @@ x <- x |>
 ggplot(x) +
   geom_histogram(aes(x = values))
 
-roi <- x |> filter(values > 10)
-
 
 y <- crossing(df_meta, x, .name_repair = "unique") |>
   filter(str_detect(acc...24, acc...1))
@@ -653,7 +651,7 @@ ggplot(
         c(
           "anatomical_terms",
           "bee_castes_roles",
-          "bee_species_types",
+          #"bee_species_types",
           "biological_processes"
         )
     )
