@@ -553,7 +553,7 @@ summary_list <- lapply(summary_files, read_delim, delim = '\t')
 summary_combined <- reduce(summary_list, left_join, by = "Status")
 write_csv(
   summary_combined,
-  paste0(Sys.getenv("PATH_PARENT"), "summary_srr_0-3000_MB.csv"),
+  paste0(Sys.getenv("PATH_PARENT"), "summary_srr_0-4000_MB.csv"),
   quote = "none"
 )
 
@@ -577,7 +577,11 @@ ggplot(summary_norm) +
   geom_point(aes(x = Assigned, y = Unassigned), size = 0.3) +
   xlab("Proportion Assigned") +
   ylab("Proportion Unassigned") +
-  ggtitle("Summary of Reads for SRR Runs of Size 0-3000 MB") +
+  ggtitle(paste0(
+    "Summary of Reads for SRR Runs of Size 0-4000 MB (n = ",
+    summary_norm$SRR_runs |> unique() |> length(),
+    ")"
+  )) +
   facet_wrap(~Unassigned_type)
 
 
@@ -594,7 +598,7 @@ counts_files <- list.files(
 counts_list <- lapply(counts_files, read_delim, delim = '\t', skip = 1)
 counts_combined <- reduce(counts_list, left_join, by = "Geneid")
 
-csv_file_name <- "counts_srr_0-3000_MB.csv"
+csv_file_name <- "counts_srr_0-4000_MB.csv"
 
 write_csv(
   counts_combined,
@@ -637,28 +641,33 @@ ggplot(x) +
 y <- crossing(df_meta, x, .name_repair = "unique") |>
   filter(str_detect(acc...24, acc...1))
 
-z <- y |>
+z <-
+  y |>
+  select(
+    Geneid,
+    acc...1,
+    acc...24,
+    values,
+    anatomical_terms,
+    bee_castes_roles
+  ) |>
   pivot_longer(
     cols = -c(Geneid, acc...1, acc...24, values),
     names_to = "Category",
     values_to = "Keyword"
   )
+# z <- y |>
+#   pivot_longer(
+#     cols = -c(Geneid, acc...1, acc...24, values),
+#     names_to = "Category",
+#     values_to = "Keyword"
+#   )
 
-ggplot(
-  data = z |>
-    filter(
-      Category ==
-        c(
-          "anatomical_terms",
-          "bee_castes_roles",
-          #"bee_species_types",
-          "biological_processes"
-        )
-    )
-) +
-  geom_boxplot(aes(x = Keyword, y = values)) +
+ggplot(data = z, aes(x = Keyword, y = values)) +
+  geom_boxplot() +
   coord_flip() +
-  facet_wrap(~Category, scales = "free_y")
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  facet_wrap(. ~ Category, ncol = 1, scales = "free_y")
 
 z |>
   summarise(
@@ -673,10 +682,12 @@ z |>
 srr_1 <- read_lines("srr_1-1000_MB.txt")
 srr_2 <- read_lines("srr_1001-2000_MB.txt")
 srr_3 <- read_lines("srr_2001-3000_MB.txt")
+srr_4 <- read_lines("srr_3001-4000_MB.txt")
 srr_collected <- names(counts_scaled_100)[-1]
+length(srr_collected) -
+  (length(srr_1) + length(srr_2) + length(srr_3) + length(srr_4)) # There were three that couldnt be processed
 
-
-length(srr_1) - sum(srr_1 %in% srr_collected) # There were three that couldnt be processed
+length(srr_1) - sum(srr_1 %in% srr_collected)
 length(srr_2)
 sum(srr_2 %in% srr_collected)
 length(srr_3) - sum(srr_3 %in% srr_collected)
