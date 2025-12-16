@@ -656,6 +656,13 @@ z <-
     names_to = "Category",
     values_to = "Keyword"
   )
+
+z_counts <-
+  z |>
+  group_by(Keyword) |>
+  count()
+z <- left_join(z, z_counts, by = "Keyword", keep = F)
+
 # z <- y |>
 #   pivot_longer(
 #     cols = -c(Geneid, acc...1, acc...24, values),
@@ -663,8 +670,9 @@ z <-
 #     values_to = "Keyword"
 #   )
 
-ggplot(data = z, aes(x = Keyword, y = values)) +
+ggplot(data = z, aes(x = Keyword, y = values, col = n)) +
   geom_boxplot() +
+  scale_color_gradient(trans = "log", low = "red", high = "green") +
   coord_flip() +
   theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
   facet_wrap(. ~ Category, ncol = 1, scales = "free_y")
@@ -675,6 +683,43 @@ z |>
     inf_count = sum(is.infinite(values)),
     nan_count = sum(is.nan(values))
   )
+
+
+counts_binned <-
+  counts_scaled_100 |>
+  pivot_longer(cols = -Geneid, names_to = "runs", values_to = "counts") |>
+  pull(counts) |>
+  data.frame()
+
+ggplot(data = counts_binned) +
+  geom_histogram(
+    aes(
+      x = pull.pivot_longer.counts_scaled_100..cols....Geneid..names_to....runs...
+    ),
+    binwidth = 1
+  ) +
+  xlab("count value (normalised to 100)") +
+  ylab("frequency") +
+  scale_y_continuous(
+    #   transform = "log10",
+    #   breaks = 10^(0:8), # gridline positions
+    labels = scales::comma,
+    #   minor_breaks = as.vector(outer(1:9, 10^(0:10), `*`))
+  ) +
+  ggtitle(
+    label = paste0(
+      "Histogram of all count values (sra runs = ",
+      ncol(counts_scaled_100) - 1,
+      ")"
+    )
+  ) +
+  theme_minimal() +
+  theme(
+    panel.grid.major.y = element_line(color = "grey70"),
+    panel.grid.minor.y = element_line(color = "grey85")
+  )
+
+
 #### ---- RUBBISH ----
 
 # Check list of srr runs agains data collected
