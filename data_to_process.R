@@ -541,7 +541,7 @@ df_meta <- df %>%
 
 #### ---- Summary Data ----
 
-path = Sys.getenv("PATH_DATA")
+path <- Sys.getenv("PATH_DATA")
 
 summary_files <- list.files(
   path = path,
@@ -587,7 +587,7 @@ ggplot(summary_norm) +
 
 #### ---- Counts Data ----
 
-#path = "//wsl.localhost/Ubuntu-24.04/home/blake/sra/counts/"
+path <- "//wsl.localhost/Ubuntu-24.04/home/blake/sra/counts/"
 
 counts_files <- list.files(
   path = path,
@@ -670,12 +670,23 @@ z <- left_join(z, z_counts, by = "Keyword", keep = F)
 #     values_to = "Keyword"
 #   )
 
+max_y <- max(z$values, na.rm = TRUE)
+
+library(ggh4x)
+
 ggplot(data = z, aes(x = Keyword, y = values, col = n)) +
   geom_boxplot() +
+  geom_text(
+    aes(label = paste("n =", n), y = max_y),
+    hjust = 1,
+    size = 3,
+    colour = "black"
+  ) +
   scale_color_gradient(trans = "log", low = "red", high = "green") +
   coord_flip() +
   theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  facet_wrap(. ~ Category, ncol = 1, scales = "free_y")
+  facet_wrap2(. ~ Category, ncol = 1, scales = "free_y") +
+  force_panelsizes(rows = c(2, 1)) # first facet twice as tall
 
 z |>
   summarise(
