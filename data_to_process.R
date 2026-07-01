@@ -630,13 +630,23 @@ counts_scaled_100 <-
   )) |>
   rename_with(~ str_remove(., "\\.SAM"))
 
-x <- counts_scaled_100 |> filter(Geneid == Sys.getenv("GENE1"))
-x <- x |>
+# ---- Define genes of interest ----
+load_dot_env()
+
+genes_of_interest <- c(
+  Sys.getenv("GENE1"),
+  Sys.getenv("GENE2"),
+  Sys.getenv("GENE3")
+)
+
+# Filter to all genes, pivot long, keep Geneid as facet variable
+x <- counts_scaled_100 |>
+  filter(Geneid %in% genes_of_interest) |>
   pivot_longer(cols = -Geneid, names_to = "acc", values_to = "values")
 
 ggplot(x) +
-  geom_histogram(aes(x = values))
-
+  geom_histogram(aes(x = values)) +
+  facet_wrap(~Geneid)
 
 y <- crossing(df_meta, x, .name_repair = "unique") |>
   filter(str_detect(acc...24, acc...1))
@@ -663,30 +673,28 @@ z_counts <-
   count()
 z <- left_join(z, z_counts, by = "Keyword", keep = F)
 
-# z <- y |>
-#   pivot_longer(
-#     cols = -c(Geneid, acc...1, acc...24, values),
-#     names_to = "Category",
-#     values_to = "Keyword"
-#   )
-
 max_y <- max(z$values, na.rm = TRUE)
 
 library(ggh4x)
 
+# Facet rows: Category; facet cols: Geneid
 ggplot(data = z, aes(x = Keyword, y = values, col = n)) +
   geom_boxplot() +
   geom_text(
-    aes(label = paste("n =", n), y = max_y),
-    hjust = 1,
+    aes(label = paste("n =", n / 3), y = max_y),
+    hjust = -0.1,
     size = 3,
     colour = "black"
   ) +
   scale_color_gradient(trans = "log", low = "red", high = "green") +
+  scale_y_continuous(limits = c(NA, 120)) +
+  ylab("Normalised count") +
   coord_flip() +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  facet_wrap2(. ~ Category, ncol = 1, scales = "free_y") +
-  force_panelsizes(rows = c(2, 1)) # first facet twice as tall
+  theme(
+    axis.text.x = element_text(size = 15, angle = 0, hjust = 0.5, face = "bold")
+  ) +
+  facet_grid(Category ~ Geneid, scales = "free_y") +
+  force_panelsizes(rows = c(2, 1))
 
 z |>
   summarise(
@@ -712,10 +720,7 @@ ggplot(data = counts_binned) +
   xlab("count value (normalised to 100)") +
   ylab("frequency") +
   scale_y_continuous(
-    #   transform = "log10",
-    #   breaks = 10^(0:8), # gridline positions
     labels = scales::comma,
-    #   minor_breaks = as.vector(outer(1:9, 10^(0:10), `*`))
   ) +
   ggtitle(
     label = paste0(
